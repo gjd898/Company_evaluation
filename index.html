@@ -37,7 +37,23 @@
         <button id="reset-btn" class="btn ghost">重置筛选</button>
       </aside>
 
-      <section>
+      <section class="content-panel">
+        <div class="panel list-toolbar">
+          <label>
+            每页显示
+            <select id="page-size-select">
+              <option value="10">10 条</option>
+              <option value="20">20 条</option>
+              <option value="50">50 条</option>
+            </select>
+          </label>
+          <div class="pager">
+            <button id="prev-page" class="btn ghost">上一页</button>
+            <span id="page-indicator"></span>
+            <button id="next-page" class="btn ghost">下一页</button>
+          </div>
+        </div>
+
         <div id="list" class="company-list"></div>
       </section>
     </main>

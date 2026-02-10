@@ -2,7 +2,9 @@ const state = {
   query: '',
   sort: 'hot',
   anonymousOnly: false,
-  rows: []
+  rows: [],
+  page: 1,
+  pageSize: 10
 };
 
 function getCompanyName(rawContent) {
@@ -61,6 +63,21 @@ function filteredRows() {
   return rows;
 }
 
+function paginationMeta(total) {
+  const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
+  if (state.page > totalPages) state.page = totalPages;
+  const start = (state.page - 1) * state.pageSize;
+  const end = start + state.pageSize;
+  return { totalPages, start, end };
+}
+
+function renderPager(total) {
+  const { totalPages } = paginationMeta(total);
+  document.getElementById('page-indicator').textContent = `第 ${state.page} / ${totalPages} 页（共 ${total} 条）`;
+  document.getElementById('prev-page').disabled = state.page <= 1;
+  document.getElementById('next-page').disabled = state.page >= totalPages;
+}
+
 function renderStats(rows) {
   const totalComments = rows.reduce((sum, row) => sum + row.comments.length, 0);
   const totalHeat = rows.reduce((sum, row) => sum + row.heat, 0);
@@ -84,6 +101,7 @@ function render() {
   const container = document.getElementById('list');
   const rows = filteredRows();
   renderStats(rows);
+  renderPager(rows.length);
   container.innerHTML = '';
 
   if (!rows.length) {
@@ -91,7 +109,10 @@ function render() {
     return;
   }
 
-  rows.forEach((row) => {
+  const { start, end } = paginationMeta(rows.length);
+  const pagedRows = rows.slice(start, end);
+
+  pagedRows.forEach((row) => {
     const tpl = document.getElementById('company-template').content.cloneNode(true);
     tpl.querySelector('.company-name').textContent = row.companyName;
     tpl.querySelector('.meta').textContent = `评论 ${row.comments.length} 条 · 热度 ${row.heat} · 最近更新 ${row.updated_at || '未知'}`;
@@ -139,6 +160,7 @@ async function loadPosts() {
       throw new Error(payload.message || '接口返回异常');
     }
     state.rows = payload.data || [];
+    state.page = 1;
     render();
   } catch (error) {
     setLoading(true, `加载失败：${error.message}`);
@@ -148,26 +170,54 @@ async function loadPosts() {
 function bind() {
   document.getElementById('search-input').addEventListener('input', (event) => {
     state.query = event.target.value;
+    state.page = 1;
     render();
   });
 
   document.getElementById('sort-select').addEventListener('change', (event) => {
     state.sort = event.target.value;
+    state.page = 1;
     render();
   });
 
   document.getElementById('only-anonymous').addEventListener('change', (event) => {
     state.anonymousOnly = event.target.checked;
+    state.page = 1;
     render();
+  });
+
+  document.getElementById('page-size-select').addEventListener('change', (event) => {
+    state.pageSize = Number(event.target.value);
+    state.page = 1;
+    render();
+  });
+
+  document.getElementById('prev-page').addEventListener('click', () => {
+    if (state.page > 1) {
+      state.page -= 1;
+      render();
+    }
+  });
+
+  document.getElementById('next-page').addEventListener('click', () => {
+    const total = filteredRows().length;
+    const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
+    if (state.page < totalPages) {
+      state.page += 1;
+      render();
+    }
   });
 
   document.getElementById('reset-btn').addEventListener('click', () => {
     state.query = '';
     state.sort = 'hot';
     state.anonymousOnly = false;
+    state.pageSize = 10;
+    state.page = 1;
     document.getElementById('search-input').value = '';
     document.getElementById('sort-select').value = 'hot';
     document.getElementById('only-anonymous').checked = false;
+    document.getElementById('page-size-select').value = '10';
     render();
   });
 }

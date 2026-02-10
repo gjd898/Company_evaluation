@@ -10,25 +10,41 @@
   --ok: #22c55e;
 }
 * { box-sizing: border-box; }
+html, body {
+  max-width: 100%;
+}
 body {
   margin: 0;
   font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   background: radial-gradient(circle at top, #e0f2fe 0, var(--bg) 45%);
   color: var(--text);
-  overflow-x: hidden;
+  overflow-x: clip;
+}
+.topbar,
+.layout {
+  width: min(1200px, 100%);
+  margin: 0 auto;
+  padding-left: 16px;
+  padding-right: 16px;
 }
 .topbar {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 24px 16px;
+  padding-top: 24px;
+  padding-bottom: 24px;
   display: flex;
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+  flex-wrap: wrap;
 }
 .topbar h1 { margin: 0; }
 .topbar p { margin: 8px 0 0; color: var(--muted); }
-.stats { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.stats {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+}
 .stat-pill {
   background: #fff;
   border: 1px solid var(--border);
@@ -37,11 +53,10 @@ body {
   font-size: 13px;
 }
 .layout {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 16px 24px;
+  padding-top: 0;
+  padding-bottom: 24px;
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
   gap: 16px;
 }
 .layout > * {
@@ -69,13 +84,41 @@ input, select {
 .inline input { width: auto; margin: 0; }
 .btn {
   border: 1px solid var(--border);
+  background: #fff;
   padding: 10px 12px;
   border-radius: 10px;
   font: inherit;
   cursor: pointer;
   margin-top: 12px;
 }
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
 .btn.ghost:hover { border-color: var(--primary); color: var(--primary); }
+.content-panel { min-width: 0; }
+.list-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.list-toolbar label {
+  margin-top: 0;
+  min-width: 140px;
+}
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+#page-indicator {
+  color: var(--muted);
+  font-size: 14px;
+}
 .company-list { display: grid; gap: 14px; }
 .company-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
 .company-name { margin: 0 0 8px; }
@@ -116,4 +159,6 @@ input, select {
 @media (max-width: 980px) {
   .layout { grid-template-columns: 1fr; }
   .filters { position: static; }
+  .list-toolbar { flex-direction: column; align-items: stretch; }
+  .pager { justify-content: flex-start; }
 }
