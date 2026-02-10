@@ -15,6 +15,7 @@ body {
   font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   background: radial-gradient(circle at top, #e0f2fe 0, var(--bg) 45%);
   color: var(--text);
+  overflow-x: hidden;
 }
 .topbar {
   max-width: 1200px;
@@ -42,6 +43,9 @@ body {
   display: grid;
   grid-template-columns: 300px 1fr;
   gap: 16px;
+}
+.layout > * {
+  min-width: 0;
 }
 .panel {
   background: var(--panel);
@@ -88,6 +92,8 @@ input, select {
   border-radius: 10px;
   padding: 10px;
   white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   max-height: 220px;
   overflow: auto;
 }
@@ -99,6 +105,8 @@ input, select {
   border-radius: 8px;
   font-size: 14px;
   line-height: 1.6;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .empty {
   padding: 30px;
