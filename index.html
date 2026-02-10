@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>公司避雷社区</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>公司避雷社区</h1>
+        <p>匿名分享真实评价，帮求职者降低试错成本</p>
+      </div>
+      <div class="stats" id="global-stats"></div>
+    </header>
+
+    <main class="layout">
+      <aside class="panel filters">
+        <h2>筛选</h2>
+        <label>
+          搜索公司 / 内容
+          <input id="search-input" type="search" placeholder="例如：加班、传销、山东" />
+        </label>
+        <label>
+          排序
+          <select id="sort-select">
+            <option value="hot">热度优先（PV + UV）</option>
+            <option value="recent">最近更新时间</option>
+            <option value="comment">评论数量</option>
+          </select>
+        </label>
+        <label class="inline">
+          <input type="checkbox" id="only-anonymous" />
+          仅看匿名爆料
+        </label>
+        <button id="reset-btn" class="btn ghost">重置筛选</button>
+      </aside>
+
+      <section class="content-panel">
+        <div class="panel list-toolbar">
+          <label>
+            每页显示
+            <select id="page-size-select">
+              <option value="10">10 条</option>
+              <option value="20">20 条</option>
+              <option value="50">50 条</option>
+            </select>
+          </label>
+          <div class="pager">
+            <button id="prev-page" class="btn ghost">上一页</button>
+            <span id="page-indicator"></span>
+            <button id="next-page" class="btn ghost">下一页</button>
+          </div>
+        </div>
+
+        <div id="list" class="company-list"></div>
+      </section>
+    </main>
+
+    <template id="company-template">
+      <article class="panel company-card">
+        <header class="company-head">
+          <div>
+            <h3 class="company-name"></h3>
+            <div class="meta"></div>
+          </div>
+          <span class="badge risk"></span>
+        </header>
+        <p class="summary"></p>
+        <details class="original-post">
+          <summary>查看原帖详情</summary>
+          <pre class="raw-content"></pre>
+        </details>
+        <section>
+          <h4>评论区</h4>
+          <ul class="comment-list"></ul>
+        </section>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
