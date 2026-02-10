@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""公司避雷社区 Python 后端。
-
-功能：
-- 提供静态文件：/ /index.html /styles.css /app.js
-- 提供接口：GET /api/posts
-- 按 posts 表结构聚合根帖和评论
-"""
+"""公司避雷社区 Python 后端。"""
 
 from __future__ import annotations
 
@@ -16,7 +10,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -30,35 +24,17 @@ DB_CONFIG = {
 }
 
 
-def _load_rows() -> list[dict[str, Any]]:
-    """读取 posts 表数据。
+def _format_value(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    return value
 
-    优先尝试 pymysql / mysql.connector / MySQLdb。
-    若运行环境缺少驱动，会抛出清晰错误，便于用户在目标环境安装。
-    """
 
-    query = """
-SELECT
-  id,
-  parent_id,
-  root_id,
-  from_id,
-  content,
-  status,
-  is_anonymous,
-  is_disable,
-  uv,
-  pv,
-  is_hide,
-  last_comment_at,
-  last_update_at,
-  created_at,
-  updated_at
-FROM posts
-WHERE status = 1 AND is_hide = 0
-ORDER BY created_at DESC
-""".strip()
+def _normalize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{k: _format_value(v) for k, v in row.items()} for row in rows]
 
+
+def _query_rows(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     last_err: Exception | None = None
 
     try:
@@ -75,9 +51,8 @@ ORDER BY created_at DESC
         )
         with conn:
             with conn.cursor() as cur:
-                cur.execute(query)
-                rows = list(cur.fetchall())
-        return rows
+                cur.execute(sql, params)
+                return list(cur.fetchall())
     except Exception as err:  # noqa: BLE001
         last_err = err
 
@@ -94,7 +69,7 @@ ORDER BY created_at DESC
         )
         try:
             cur = conn.cursor(dictionary=True)
-            cur.execute(query)
+            cur.execute(sql, params)
             rows = list(cur.fetchall())
             cur.close()
             return rows
@@ -116,7 +91,7 @@ ORDER BY created_at DESC
         )
         try:
             cur = conn.cursor(MySQLdb.cursors.DictCursor)
-            cur.execute(query)
+            cur.execute(sql, params)
             rows = list(cur.fetchall())
             cur.close()
             return rows
@@ -130,29 +105,97 @@ ORDER BY created_at DESC
     ) from last_err
 
 
-def _format_value(value: Any) -> Any:
-    if isinstance(value, datetime):
-        return value.strftime("%Y-%m-%d %H:%M:%S")
-    return value
+def _build_order(sort: str) -> str:
+    if sort == "hot":
+        return "ORDER BY (COALESCE(pv,0) + COALESCE(uv,0)) DESC, created_at DESC"
+    return "ORDER BY COALESCE(last_update_at, updated_at, created_at) DESC"
 
 
-def _build_tree(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    roots: dict[str, dict[str, Any]] = {}
+def _get_posts_page(
+    page: int,
+    page_size: int,
+    sort: str,
+    q: str,
+    anonymous_only: bool,
+) -> dict[str, Any]:
+    where = ["status = 1", "is_hide = 0", "parent_id IS NULL"]
+    params: list[Any] = []
+
+    if anonymous_only:
+        where.append("is_anonymous = 1")
+    if q:
+        where.append("content LIKE %s")
+        params.append(f"%{q}%")
+
+    where_sql = " AND ".join(where)
+    order_sql = _build_order(sort)
+
+    count_sql = f"SELECT COUNT(*) AS total FROM posts WHERE {where_sql}"
+    total_row = _query_rows(count_sql, tuple(params))[0]
+    total = int(total_row["total"])
+
+    offset = (page - 1) * page_size
+    root_sql = f"""
+SELECT
+  id,
+  parent_id,
+  root_id,
+  from_id,
+  content,
+  status,
+  is_anonymous,
+  is_disable,
+  uv,
+  pv,
+  is_hide,
+  last_comment_at,
+  last_update_at,
+  created_at,
+  updated_at
+FROM posts
+WHERE {where_sql}
+{order_sql}
+LIMIT %s OFFSET %s
+""".strip()
+
+    root_rows = _normalize_rows(_query_rows(root_sql, tuple(params + [page_size, offset])))
+    if not root_rows:
+        return {"total": total, "items": []}
+
+    root_ids = [str(row["id"]) for row in root_rows]
+    placeholders = ", ".join(["%s"] * len(root_ids))
+    comment_sql = f"""
+SELECT
+  id,
+  parent_id,
+  root_id,
+  from_id,
+  content,
+  status,
+  is_anonymous,
+  is_disable,
+  uv,
+  pv,
+  is_hide,
+  last_comment_at,
+  last_update_at,
+  created_at,
+  updated_at
+FROM posts
+WHERE status = 1 AND is_hide = 0 AND root_id IN ({placeholders})
+ORDER BY created_at ASC
+""".strip()
+
+    comments = _normalize_rows(_query_rows(comment_sql, tuple(root_ids)))
     comments_by_root: dict[str, list[dict[str, Any]]] = {}
+    for comment in comments:
+        root_id = str(comment.get("root_id") or "")
+        comments_by_root.setdefault(root_id, []).append(comment)
 
-    for row in rows:
-        normalized = {k: _format_value(v) for k, v in row.items()}
-        if normalized.get("parent_id") in (None, ""):
-            normalized["comments"] = []
-            roots[str(normalized["id"])] = normalized
-        else:
-            root_id = str(normalized.get("root_id") or normalized.get("parent_id"))
-            comments_by_root.setdefault(root_id, []).append(normalized)
+    for root in root_rows:
+        root["comments"] = comments_by_root.get(str(root["id"]), [])
 
-    for root_id, root in roots.items():
-        root["comments"] = comments_by_root.get(root_id, [])
-
-    return list(roots.values())
+    return {"total": total, "items": root_rows}
 
 
 class AppHandler(BaseHTTPRequestHandler):
@@ -161,7 +204,7 @@ class AppHandler(BaseHTTPRequestHandler):
         path = parsed.path
 
         if path == "/api/posts":
-            self._handle_api_posts()
+            self._handle_api_posts(parsed.query)
             return
 
         if path == "/":
@@ -186,10 +229,30 @@ class AppHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _handle_api_posts(self) -> None:
+    def _handle_api_posts(self, query_string: str) -> None:
         try:
-            rows = _load_rows()
-            payload = {"ok": True, "data": _build_tree(rows)}
+            query = parse_qs(query_string)
+            page = max(1, int(query.get("page", ["1"])[0]))
+            page_size = int(query.get("page_size", ["10"])[0])
+            if page_size not in (10, 20, 50):
+                page_size = 10
+            sort = query.get("sort", ["recent"])[0]
+            if sort not in ("recent", "hot"):
+                sort = "recent"
+            q = query.get("q", [""])[0].strip()
+            anonymous_only = query.get("anonymous_only", ["0"])[0] == "1"
+
+            result = _get_posts_page(page, page_size, sort, q, anonymous_only)
+            payload = {
+                "ok": True,
+                "data": result["items"],
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total": result["total"],
+                    "total_pages": max(1, (result["total"] + page_size - 1) // page_size),
+                },
+            }
             self._write_json(HTTPStatus.OK, payload)
         except Exception as err:  # noqa: BLE001
             payload = {

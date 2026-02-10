@@ -4,7 +4,9 @@ const state = {
   anonymousOnly: false,
   rows: [],
   page: 1,
-  pageSize: 10
+  pageSize: 10,
+  total: 0,
+  totalPages: 1
 };
 
 function getCompanyName(rawContent) {
@@ -26,7 +28,7 @@ function safePreview(text, limit = 180) {
   return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized;
 }
 
-function normalizedRows() {
+function normalizeRows() {
   return (state.rows || []).map((root) => ({
     ...root,
     companyName: getCompanyName(root.content),
@@ -35,47 +37,10 @@ function normalizedRows() {
   }));
 }
 
-function filteredRows() {
-  let rows = normalizedRows();
-  const q = state.query.trim().toLowerCase();
-
-  if (q) {
-    rows = rows.filter((row) => {
-      const corpus = `${row.companyName} ${row.content} ${row.comments.map((c) => c.content).join(' ')}`.toLowerCase();
-      return corpus.includes(q);
-    });
-  }
-
-  if (state.anonymousOnly) {
-    rows = rows.filter((row) => Number(row.is_anonymous) === 1);
-  }
-
-  rows.sort((a, b) => {
-    if (state.sort === 'recent') {
-      return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime();
-    }
-    if (state.sort === 'comment') {
-      return b.comments.length - a.comments.length;
-    }
-    return b.heat - a.heat;
-  });
-
-  return rows;
-}
-
-function paginationMeta(total) {
-  const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
-  if (state.page > totalPages) state.page = totalPages;
-  const start = (state.page - 1) * state.pageSize;
-  const end = start + state.pageSize;
-  return { totalPages, start, end };
-}
-
-function renderPager(total) {
-  const { totalPages } = paginationMeta(total);
-  document.getElementById('page-indicator').textContent = `第 ${state.page} / ${totalPages} 页（共 ${total} 条）`;
+function updatePagerUi() {
+  document.getElementById('page-indicator').textContent = `第 ${state.page} / ${state.totalPages} 页（共 ${state.total} 条）`;
   document.getElementById('prev-page').disabled = state.page <= 1;
-  document.getElementById('next-page').disabled = state.page >= totalPages;
+  document.getElementById('next-page').disabled = state.page >= state.totalPages;
 }
 
 function renderStats(rows) {
@@ -85,10 +50,10 @@ function renderStats(rows) {
   stats.innerHTML = '';
 
   [
-    `收录公司 ${rows.length}`,
-    `评论总数 ${totalComments}`,
-    `平台热度 ${totalHeat}`,
-    `更新时间 ${new Date().toLocaleString()}`
+    `当前页公司 ${rows.length}`,
+    `当前页评论 ${totalComments}`,
+    `当前页热度 ${totalHeat}`,
+    `总公司 ${state.total}`
   ].forEach((item) => {
     const span = document.createElement('span');
     span.className = 'stat-pill';
@@ -97,11 +62,57 @@ function renderStats(rows) {
   });
 }
 
+function getReplyTarget(comment, idToNode, rootPost) {
+  if (!comment.parent_id || comment.parent_id === rootPost.id) {
+    return `#主帖`;
+  }
+  const target = idToNode.get(comment.parent_id);
+  if (!target) return `#${comment.parent_id}`;
+  return `用户${target.from_id}`;
+}
+
+function renderCommentTree(container, comments, rootPost) {
+  const idToNode = new Map(comments.map((item) => [item.id, item]));
+  const childrenMap = new Map();
+
+  comments.forEach((item) => {
+    const parentKey = item.parent_id === rootPost.id ? rootPost.id : item.parent_id;
+    const list = childrenMap.get(parentKey) || [];
+    list.push(item);
+    childrenMap.set(parentKey, list);
+  });
+
+  const renderChildren = (parentId, depth) => {
+    const children = childrenMap.get(parentId) || [];
+    children.forEach((comment) => {
+      const li = document.createElement('li');
+      li.className = 'comment';
+      li.style.marginLeft = `${Math.min(depth, 6) * 18}px`;
+
+      const header = document.createElement('div');
+      header.className = 'comment-head';
+      header.textContent = `用户${comment.from_id} · 回复 ${getReplyTarget(comment, idToNode, rootPost)} · ${comment.created_at || '未知时间'}`;
+
+      const body = document.createElement('div');
+      body.className = 'comment-body';
+      body.textContent = comment.content || '';
+
+      li.appendChild(header);
+      li.appendChild(body);
+      container.appendChild(li);
+
+      renderChildren(comment.id, depth + 1);
+    });
+  };
+
+  renderChildren(rootPost.id, 0);
+}
+
 function render() {
   const container = document.getElementById('list');
-  const rows = filteredRows();
+  const rows = normalizeRows();
   renderStats(rows);
-  renderPager(rows.length);
+  updatePagerUi();
   container.innerHTML = '';
 
   if (!rows.length) {
@@ -109,13 +120,10 @@ function render() {
     return;
   }
 
-  const { start, end } = paginationMeta(rows.length);
-  const pagedRows = rows.slice(start, end);
-
-  pagedRows.forEach((row) => {
+  rows.forEach((row) => {
     const tpl = document.getElementById('company-template').content.cloneNode(true);
     tpl.querySelector('.company-name').textContent = row.companyName;
-    tpl.querySelector('.meta').textContent = `评论 ${row.comments.length} 条 · 热度 ${row.heat} · 最近更新 ${row.updated_at || '未知'}`;
+    tpl.querySelector('.meta').textContent = `发布者 用户${row.from_id} · 发布于 ${row.created_at || '未知时间'} · 评论 ${row.comments.length} 条 · 热度 ${row.heat}`;
 
     const [riskText, riskClass] = riskLevel(row, row.comments);
     const badge = tpl.querySelector('.badge.risk');
@@ -132,38 +140,47 @@ function render() {
       li.textContent = '暂无评论';
       commentList.appendChild(li);
     } else {
-      row.comments.forEach((comment, index) => {
-        const li = document.createElement('li');
-        li.className = 'comment';
-        li.textContent = `#${index + 1} ${comment.content}`;
-        commentList.appendChild(li);
-      });
+      renderCommentTree(commentList, row.comments, row);
     }
 
     container.appendChild(tpl);
   });
 }
 
-function setLoading(loading, text = '正在加载数据...') {
+function setLoading(text = '正在加载数据...') {
   const container = document.getElementById('list');
-  if (loading) {
-    container.innerHTML = `<article class="panel empty">${text}</article>`;
-  }
+  container.innerHTML = `<article class="panel empty">${text}</article>`;
 }
 
 async function loadPosts() {
-  setLoading(true);
+  setLoading();
+  updatePagerUi();
+
+  const params = new URLSearchParams({
+    page: String(state.page),
+    page_size: String(state.pageSize),
+    sort: state.sort,
+    anonymous_only: state.anonymousOnly ? '1' : '0',
+    q: state.query
+  });
+
   try {
-    const res = await fetch('/api/posts', { headers: { Accept: 'application/json' } });
+    const res = await fetch(`/api/posts?${params.toString()}`, {
+      headers: { Accept: 'application/json' }
+    });
     const payload = await res.json();
     if (!res.ok || !payload.ok) {
       throw new Error(payload.message || '接口返回异常');
     }
+
     state.rows = payload.data || [];
-    state.page = 1;
+    state.total = Number(payload.pagination?.total || 0);
+    state.totalPages = Number(payload.pagination?.total_pages || 1);
+    state.page = Number(payload.pagination?.page || 1);
+
     render();
   } catch (error) {
-    setLoading(true, `加载失败：${error.message}`);
+    setLoading(`加载失败：${error.message}`);
   }
 }
 
@@ -171,40 +188,38 @@ function bind() {
   document.getElementById('search-input').addEventListener('input', (event) => {
     state.query = event.target.value;
     state.page = 1;
-    render();
+    loadPosts();
   });
 
   document.getElementById('sort-select').addEventListener('change', (event) => {
     state.sort = event.target.value;
     state.page = 1;
-    render();
+    loadPosts();
   });
 
   document.getElementById('only-anonymous').addEventListener('change', (event) => {
     state.anonymousOnly = event.target.checked;
     state.page = 1;
-    render();
+    loadPosts();
   });
 
   document.getElementById('page-size-select').addEventListener('change', (event) => {
     state.pageSize = Number(event.target.value);
     state.page = 1;
-    render();
+    loadPosts();
   });
 
   document.getElementById('prev-page').addEventListener('click', () => {
     if (state.page > 1) {
       state.page -= 1;
-      render();
+      loadPosts();
     }
   });
 
   document.getElementById('next-page').addEventListener('click', () => {
-    const total = filteredRows().length;
-    const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
-    if (state.page < totalPages) {
+    if (state.page < state.totalPages) {
       state.page += 1;
-      render();
+      loadPosts();
     }
   });
 
@@ -214,11 +229,13 @@ function bind() {
     state.anonymousOnly = false;
     state.pageSize = 10;
     state.page = 1;
+
     document.getElementById('search-input').value = '';
     document.getElementById('sort-select').value = 'hot';
     document.getElementById('only-anonymous').checked = false;
     document.getElementById('page-size-select').value = '10';
-    render();
+
+    loadPosts();
   });
 }
 

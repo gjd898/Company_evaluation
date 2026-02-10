@@ -134,7 +134,7 @@ input, select {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px;
-  white-space: pre-wrap;
+  white-space: break-spaces;
   word-break: break-word;
   overflow-wrap: anywhere;
   max-height: 220px;
@@ -150,6 +150,14 @@ input, select {
   line-height: 1.6;
   word-break: break-word;
   overflow-wrap: anywhere;
+}
+.comment-head {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.comment-body {
+  white-space: pre-wrap;
 }
 .empty {
   padding: 30px;
